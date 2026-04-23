@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Niimbot Hello World</title>
-  <script src="https://unpkg.com/@mmote/niimbluelib@0.0.1-alpha.38/dist/umd/niimbluelib.min.js"></script>
+  <script src="https://unpkg.com/@mmote/niimbluelib@0.0.1-alpha.39/dist/umd/niimbluelib.min.js"></script>
 </head>
 <body>
   <h2>Niimbot Hello World 🖨️</h2>
@@ -19,48 +19,52 @@
     document.getElementById("btnPrint").addEventListener("click", async () => {
       const client = new niimbluelib.NiimbotBluetoothClient();
 
-      client.on("connect",      ()           => log("✅ Connected!"));
-      client.on("disconnect",   ()           => log("🔌 Disconnected"));
-      client.on("printprogress", ({ current, total }) =>
-        log(`📄 Line ${current}/${total}`)
+      client.on("connect",    ()  => log("✅ Connected!"));
+      client.on("disconnect", ()  => log("🔌 Disconnected"));
+      client.on("printprogress", (e) =>
+        log(`📄 Page ${e.page}, print: ${e.pagePrintProgress}%, feed: ${e.pageFeedProgress}%`)
       );
 
       try {
         log("Opening Bluetooth picker...");
         await client.connect();
 
-        // --- Draw the label ---
-        // Adjust W/H to your physical label size in pixels.
-        // D110: 96px wide. B1/B21: 384px wide.
+        // --- Draw the label on a canvas ---
+        // B1: 384px wide, printDirection = "top"
+        // D110: 96px wide, printDirection = "left"
         const W = 384, H = 96;
         const canvas = document.createElement("canvas");
         canvas.width = W;
         canvas.height = H;
         const ctx = canvas.getContext("2d");
+
         ctx.fillStyle = "white";
         ctx.fillRect(0, 0, W, H);
         ctx.fillStyle = "black";
-        ctx.font = "bold 48px sans-serif";
+        ctx.font = "bold 60px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText("Hello, World!", W / 2, H / 2);
 
-        const imageData = ctx.getImageData(0, 0, W, H);
+        // --- Encode using the library's ImageEncoder (required!) ---
+        // printDirection: "top" for B1/B21, "left" for D110
+        const encoded = niimbluelib.ImageEncoder.encodeCanvas(canvas, "top");
 
-        // --- Create and run the print task ---
-        // "printTask" must match your printer model. Common values:
-        //   "B1", "D110", "D110M_V3", "D110M_V4", "B21", "B21_C2B", "B21_PRO"
-        // Stop heartbeat first, restore it after (required by the protocol)
+        // --- Create print task via abstraction.newPrintTask ---
         client.stopHeartbeat();
 
-        const task = client.createPrintTask("B1", {
+        const task = client.abstraction.newPrintTask("B1", {
           totalPages: 1,
-          density: 3,      // 1–5
-          labelType: 1,
+          density: 3,       // 1–5
+          labelType: niimbluelib.LabelType.WithGaps,
+          statusPollIntervalMs: 100,
+          statusTimeoutMs: 8000,
         });
 
         await task.printInit();
-        await task.printPage(imageData, 1);   // imageData, pageNumber
+        await task.printPage(encoded, 1);  // encoded image, quantity
+
+        log("⏳ Waiting for printer to finish...");
         await task.waitForFinished();
 
         log("🎉 Done!");
@@ -68,6 +72,7 @@
         log("❌ Error: " + err.message);
         console.error(err);
       } finally {
+        await client.abstraction.printEnd().catch(() => {});
         client.startHeartbeat();
         await client.disconnect();
       }
