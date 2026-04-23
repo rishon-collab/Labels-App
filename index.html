@@ -1,92 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NiimBlue Hello World</title>
-    <script src="https://unpkg.com/@mmote/niimbluelib/dist/umd/niimbluelib.min.js"></script>
-    <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f0f2f5; }
-        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
-        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; }
-        button:disabled { background: #ccc; }
-        #status { margin-top: 15px; color: #666; font-size: 14px; }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Niimbot Hello World</title>
+  <!-- Pin to an exact alpha version — API can change anytime -->
+  <script src="https://unpkg.com/@mmote/niimbluelib@0.0.1-alpha.38/dist/umd/niimbluelib.min.js"></script>
 </head>
 <body>
+  <h2>Niimbot Hello World 🖨️</h2>
+  <button id="btnPrint">Connect & Print</button>
+  <pre id="log"></pre>
 
-<div class="card">
-    <h1>NiimBlue Print</h1>
-    <button id="printBtn">Connect & Print Hello World</button>
-    <p id="status">Click the button to pair with your NIIMBOT printer.</p>
-</div>
+  <script>
+    const log = (msg) => {
+      document.getElementById("log").textContent += msg + "\n";
+      console.log(msg);
+    };
 
-<script>
-    const printBtn = document.getElementById('printBtn');
-    const statusTxt = document.getElementById('status');
+    document.getElementById("btnPrint").addEventListener("click", async () => {
+      // 1. Create a Bluetooth client
+      const client = new niimbluelib.NiimbotBluetoothClient();
 
-    printBtn.addEventListener('click', async () => {
-        try {
-            statusTxt.textContent = "Connecting...";
-            printBtn.disabled = true;
+      // Optional: listen to events
+      client.on("connect", () => log("✅ Connected!"));
+      client.on("disconnect", () => log("🔌 Disconnected"));
+      client.on("printprogress", ({ current, total }) =>
+        log(`📄 Printing line ${current}/${total}`)
+      );
 
-            // 1. Initialize the Bluetooth client
-            const client = new niimbluelib.NiimbotBluetoothClient();
+      try {
+        // 2. Connect — this opens the browser's BT device picker
+        log("Opening Bluetooth picker...");
+        await client.connect();
 
-            // 2. Connect to the printer (triggers browser Bluetooth picker)
-            await client.connect();
-            statusTxt.textContent = "Connected! Fetching printer info...";
+        // 3. Draw your label on a canvas
+        //    Adjust width/height to match your label size in pixels.
+        //    D110: 96px wide. B1/B21: 384px wide. Height = label length in px.
+        const W = 384, H = 96;
+        const canvas = document.createElement("canvas");
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext("2d");
 
-            // 3. Optional: Get printer info to ensure it's ready
-            const info = await client.getConnectInfo();
-            console.log("Connected to:", info);
+        // White background
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, W, H);
 
-            // 4. Create a basic Print Task
-            // Note: 1 is the most common label type (gap label)
-            const task = client.createPrintTask({
-                totalPages: 1,
-                density: 3,
-                labelType: 1 
-            });
+        // Draw "Hello, World!" text
+        ctx.fillStyle = "black";
+        ctx.font = "bold 48px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Hello, World!", W / 2, H / 2);
 
-            // 5. Generate the label image (Canvas-based)
-            // NiimBlue uses a Canvas-like approach for drawing
-            const canvas = document.createElement('canvas');
-            canvas.width = 320;  // Standard width for D11/D110/B21
-            canvas.height = 120; // Adjust based on your label size
-            const ctx = canvas.getContext('2d');
+        // 4. Print the canvas as a label
+        //    printTask: "D110" | "B1" | "B21" etc — match your printer model
+        //    labelType: 1 = regular label
+        //    density: 3 (1-5, higher = darker)
+        //    quantity: number of copies
+        const imageData = ctx.getImageData(0, 0, W, H);
 
-            // Draw "Hello World" on the canvas
-            ctx.fillStyle = "white";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = "black";
-            ctx.font = "bold 40px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText("Hello World", canvas.width / 2, canvas.height / 2 + 15);
+        await client.abstraction.printImage(imageData, {
+          printTask: "B1",   // ← change to your printer's task name
+          labelType: 1,
+          density: 3,
+          quantity: 1,
+        });
 
-            // 6. Start the printing process
-            statusTxt.textContent = "Printing...";
-            await task.printInit();
-            
-            // Convert canvas to ImageData or use the library's abstraction
-            // Here we send the canvas as the page content
-            await task.printPage(canvas, 1);
-            
-            await task.waitForFinished();
-            
-            statusTxt.textContent = "Print successful!";
-            
-            // 7. Cleanup
-            await client.disconnect();
-
-        } catch (error) {
-            console.error(error);
-            statusTxt.textContent = "Error: " + error.message;
-        } finally {
-            printBtn.disabled = false;
-        }
+        log("🎉 Print job sent!");
+      } catch (err) {
+        log("❌ Error: " + err.message);
+        console.error(err);
+      } finally {
+        await client.disconnect();
+      }
     });
-</script>
-
+  </script>
 </body>
 </html>
