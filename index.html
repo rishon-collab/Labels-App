@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Niimbot Web Print</title>
+    <script src="https://unpkg.com/@mmote/niimbluelib@0.0.1-alpha.38/dist/umd/niimbluelib.min.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 50px; }
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 5px; }
+        button:disabled { background: #ccc; }
+        #status { margin-top: 20px; color: #555; }
+    </style>
+</head>
+<body>
+
+    <h1>Niimbot Web Printer</h1>
+    <button id="printBtn">Connect & Print Label</button>
+    <div id="status">Ready.</div>
+
+    <script>
+        const printBtn = document.getElementById('printBtn');
+        const statusDiv = document.getElementById('status');
+
+        printBtn.addEventListener('click', async () => {
+            try {
+                statusDiv.innerText = "Connecting to printer...";
+                printBtn.disabled = true;
+
+                // 1. Initialize the Bluetooth Client
+                const client = new niimbluelib.NiimbotBluetoothClient();
+                await client.connect();
+                
+                statusDiv.innerText = "Connected! Preparing label...";
+
+                // 2. Create a Canvas to "draw" your label
+                // Most Niimbot labels (D110/D11) are roughly 240px wide at 203 DPI
+                const canvas = document.createElement('canvas');
+                canvas.width = 240;
+                canvas.height = 96;
+                const ctx = canvas.getContext('2d');
+
+                // Draw background (must be white) and text (must be black)
+                ctx.fillStyle = "white";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "black";
+                ctx.font = "bold 30px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText("HELLO WORLD", 120, 55);
+
+                // 3. Start the Print Task
+                // '1' is the label type (usually standard), '3' is density (medium-dark)
+                await client.printInit({ quantity: 1, density: 3, labelType: 1 });
+
+                // 4. Send the image data
+                // The library expects an ImageData object
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                await client.printPage(imgData);
+
+                // 5. Finalize
+                await client.printEnd();
+                statusDiv.innerText = "Print complete!";
+                
+                // Clean up
+                setTimeout(() => client.disconnect(), 2000);
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerText = "Error: " + error.message;
+            } finally {
+                printBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
