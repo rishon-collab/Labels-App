@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <title>Niimbot Hello World</title>
-  <!-- Pin to an exact alpha version — API can change anytime -->
   <script src="https://unpkg.com/@mmote/niimbluelib@0.0.1-alpha.38/dist/umd/niimbluelib.min.js"></script>
 </head>
 <body>
@@ -18,60 +17,58 @@
     };
 
     document.getElementById("btnPrint").addEventListener("click", async () => {
-      // 1. Create a Bluetooth client
       const client = new niimbluelib.NiimbotBluetoothClient();
 
-      // Optional: listen to events
-      client.on("connect", () => log("✅ Connected!"));
-      client.on("disconnect", () => log("🔌 Disconnected"));
+      client.on("connect",      ()           => log("✅ Connected!"));
+      client.on("disconnect",   ()           => log("🔌 Disconnected"));
       client.on("printprogress", ({ current, total }) =>
-        log(`📄 Printing line ${current}/${total}`)
+        log(`📄 Line ${current}/${total}`)
       );
 
       try {
-        // 2. Connect — this opens the browser's BT device picker
         log("Opening Bluetooth picker...");
         await client.connect();
 
-        // 3. Draw your label on a canvas
-        //    Adjust width/height to match your label size in pixels.
-        //    D110: 96px wide. B1/B21: 384px wide. Height = label length in px.
+        // --- Draw the label ---
+        // Adjust W/H to your physical label size in pixels.
+        // D110: 96px wide. B1/B21: 384px wide.
         const W = 384, H = 96;
         const canvas = document.createElement("canvas");
         canvas.width = W;
         canvas.height = H;
         const ctx = canvas.getContext("2d");
-
-        // White background
         ctx.fillStyle = "white";
         ctx.fillRect(0, 0, W, H);
-
-        // Draw "Hello, World!" text
         ctx.fillStyle = "black";
         ctx.font = "bold 48px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText("Hello, World!", W / 2, H / 2);
 
-        // 4. Print the canvas as a label
-        //    printTask: "D110" | "B1" | "B21" etc — match your printer model
-        //    labelType: 1 = regular label
-        //    density: 3 (1-5, higher = darker)
-        //    quantity: number of copies
         const imageData = ctx.getImageData(0, 0, W, H);
 
-        await client.abstraction.printImage(imageData, {
-          printTask: "B1",   // ← change to your printer's task name
+        // --- Create and run the print task ---
+        // "printTask" must match your printer model. Common values:
+        //   "B1", "D110", "D110M_V3", "D110M_V4", "B21", "B21_C2B", "B21_PRO"
+        // Stop heartbeat first, restore it after (required by the protocol)
+        client.stopHeartbeat();
+
+        const task = client.createPrintTask("B1", {
+          totalPages: 1,
+          density: 3,      // 1–5
           labelType: 1,
-          density: 3,
-          quantity: 1,
         });
 
-        log("🎉 Print job sent!");
+        await task.printInit();
+        await task.printPage(imageData, 1);   // imageData, pageNumber
+        await task.waitForFinished();
+
+        log("🎉 Done!");
       } catch (err) {
         log("❌ Error: " + err.message);
         console.error(err);
       } finally {
+        client.startHeartbeat();
         await client.disconnect();
       }
     });
